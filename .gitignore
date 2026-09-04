@@ -1,0 +1,35 @@
+# ===== 密钥 / 环境变量（真实凭据绝不入库，只提交 .env.example）=====
+.env
+**/.env
+.env.local
+*.key
+*.pem
+
+# ===== Python =====
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ===== 本插件运行期产物 =====
+*.log
+_mem0_backup/
+_RESTORE_INFO.json
+*.tmp
+*.bak
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== 大体积媒体（演示用 GIF 可入库，原始视频请外链）=====
+*.mp4
+*.mov
+*.zip

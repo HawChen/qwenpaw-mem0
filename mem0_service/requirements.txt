@@ -1,0 +1,7 @@
+# ===== 火山引擎 Mem0 记忆服务依赖 (锁定版本，避免 Breaking Changes) =====
+mem0ai==0.1.118
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+pydantic==2.10.4
+httpx==0.28.1
