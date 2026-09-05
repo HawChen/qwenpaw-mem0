@@ -194,6 +194,16 @@ python test_plugin.py                    # 测试 Hook+Skill 是否成功注入 
 
 ---
 
+## ⚖️ 法律与商标声明
+
+- **原创与许可**：本仓库代码为作者原创，以 MIT 发布；通过 QwenPaw / AgentScope 的公开 Hook、Toolkit 接口及 mem0ai SDK 开发，**未复制或修改上游源码**，属于独立的第三方插件。
+- **上游许可兼容性**：QwenPaw、AgentScope、mem0ai 均为 Apache-2.0；FastAPI / Pydantic 为 MIT，Uvicorn / HTTPX / python-dotenv 为 BSD，均与 MIT 兼容。完整组件版本、权利人与归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **非官方声明（No Affiliation）**：本项目为个人非官方项目，与阿里巴巴（QwenPaw / 通义 / AgentScope）、字节跳动（火山引擎 Volcengine）、Mem0 AI 均无隶属、赞助或背书关系；上述名称与商标归各自权利人所有，仅用于说明兼容对象与技术来源，未使用任何官方 Logo。
+- **云服务自费与凭据安全**：火山引擎 Mem0 需使用者自行开通并获取本人 API Key（仅保存在本地 `.env`，仓库不含任何可用凭据），调用费用、配额与账号合规由使用者自行承担。
+- 代码按“现状（AS IS）”提供，免责声明详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+---
+
 ## 🙋 关于作者
 
 AI Agent 产品经理，聚焦大模型在工业 / 企业服务场景的私有化落地，擅长 RAG、多 Agent 编排与 Agent 记忆 / 约束架构。
@@ -201,4 +211,4 @@ AI Agent 产品经理，聚焦大模型在工业 / 企业服务场景的私有�
 - 技术博客 / 行业观察：知乎专栏「逆水方塘」【链接待补】
 - 联系方式：通过 GitHub 与我联系 → [@HawChen](https://github.com/HawChen)（欢迎在本仓库提交 Issue / Discussion，或访问我的 GitHub 主页）
 
-> 本仓库为个人架构实践，QwenPaw、AgentScope、mem0ai 等第三方框架与服务版权归原作者所有；仓库不包含任何真实密钥与业务数据。
+> 本仓库不包含任何真实密钥与业务数据；第三方框架与服务的版权、商标归各自权利人所有，许可与归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
