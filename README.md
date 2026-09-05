@@ -124,7 +124,7 @@ mem0-integration/
 ### 方式一：作为 QwenPaw 插件（主用法）
 ```bash
 # 1. 克隆后放入宿主用户级插件目录（用户级目录不会被宿主升级覆盖）
-git clone https://github.com/【你的用户名】/qwenpaw-mem0.git
+git clone https://github.com/HawChen/qwenpaw-mem0.git
 # 将目录放到 ~/.qwenpaw/plugins/mem0-integration
 
 # 2. 安装依赖（宿主自带 Python 已预装大部分；独立环境按下表安装）
