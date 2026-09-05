@@ -103,7 +103,8 @@ flowchart TD
 mem0-integration/
 ├── backend.py                     # 插件入口：注册启动/关闭钩子，完成 Hook+Skill 注入、备份恢复
 ├── plugin.json                    # 插件清单（id/type=hook/入口/版本）
-├── test_plugin.py                 # 注入逻辑自测（相对路径加载，可直接运行）
+├── test_plugin.py                 # 注入逻辑自测（Path.home 定位，可用 MEM0_PLUGIN_BACKEND 覆盖）
+├── docs/                          # 在线使用手册（user-guide-zh.md）+ Word 版说明书
 ├── requirements.txt               # 依赖说明
 └── mem0_service/
     ├── config.py                  # 全部配置读环境变量（.env），含校验与 mem0 客户端配置
@@ -187,7 +188,8 @@ python test_plugin.py                    # 测试 Hook+Skill 是否成功注入 
 
 ## 📚 文档
 
-- [用户使用说明书](docs/用户使用说明书.docx)：部署、5 个工具用法、后台查看、FAQ 与故障排查
+- [**用户使用说明书（在线 Markdown，推荐先读）**](docs/user-guide-zh.md)：部署、5 个工具的参数与示例、火山引擎后台查看、7 条 FAQ 排障与日常维护清单
+- [用户使用说明书（Word 版）](docs/用户使用说明书.docx)：同内容的可下载 / 打印版本
 - 代码内关键模块均带中文 docstring，建议按 `backend.py → hooks/skills → utils/coordinator.py` 顺序阅读。
 
 ---

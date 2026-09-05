@@ -1,7 +1,10 @@
 """直接测试 mem0-integration 插件的注入逻辑。
 
 运行方式::
-    python test_plugin.py   # 使用已安装依赖的 Python 解释器（QwenPaw 宿主自带或自建虚拟环境）
+    python test_plugin.py
+
+默认按用户主目录定位插件 backend.py；也可用环境变量
+MEM0_PLUGIN_BACKEND 显式指定 backend.py 的绝对路径。
 """
 from __future__ import annotations
 
@@ -9,9 +12,13 @@ import asyncio
 import importlib.util
 import sys
 import os
+from pathlib import Path
 
-# 加载 backend.py
-plugin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend.py")  # 相对定位，避免硬编码本机路径
+# 加载 backend.py（默认位于用户级插件目录，可用环境变量 MEM0_PLUGIN_BACKEND 覆盖）
+plugin_path = os.getenv(
+    "MEM0_PLUGIN_BACKEND",
+    str(Path.home() / ".qwenpaw" / "plugins" / "mem0-integration" / "backend.py"),
+)
 spec = importlib.util.spec_from_file_location("plugin_mem0_integration", plugin_path)
 module = importlib.util.module_from_spec(spec)
 sys.modules["plugin_mem0_integration"] = module

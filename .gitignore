@@ -1,6 +1,8 @@
 # ===== 密钥 / 环境变量（真实凭据绝不入库，只提交 .env.example）=====
 .env
 **/.env
+.env.*
+!.env.example
 .env.local
 *.key
 *.pem
