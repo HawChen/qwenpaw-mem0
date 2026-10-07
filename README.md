@@ -1,99 +1,111 @@
-# 🧠 QwenPaw-Mem0：为 Agent 接入「Hook 自动兜底 + Skill 显式增强」双层长期记忆
+# 🧠 QwenPaw-Mem0：为 QwenPaw 2.x 接入火山引擎 Mem0 的官方记忆后端
 
-### Dual-Layer Long-Term Memory for LLM Agents — AgentScope Hooks + Volcengine Mem0
+### An Official Memory-Backend Plugin Integrating Volcengine Mem0 into QwenPaw 2.x / AgentScope 2.0
 
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![AgentScope](https://img.shields.io/badge/AgentScope-1.0.20-1f8a70)
-![mem0ai](https://img.shields.io/badge/mem0ai-0.1.118-orange)
-![FastAPI](https://img.shields.io/badge/FastAPI-optional-009688)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![QwenPaw](https://img.shields.io/badge/QwenPaw-2.x-1f8a70)
+![AgentScope](https://img.shields.io/badge/AgentScope-2.0.x-7c3aed)
+![HTTPX](https://img.shields.io/badge/runtime%20dep-httpx%20only-009688)
+![Release](https://img.shields.io/badge/release-v2.0.0-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> 为开源桌面 Agent（QwenPaw，底层框架 **AgentScope**）设计的**长期记忆层**：用 4 个生命周期 Hook 实现「回复前自动召回、回复后异步写入」的无感兜底，用 5 个 Skill 工具做关键记忆的显式增删查改；并通过**异步队列、令牌桶限流、线程安全单例、删除防复活、版本兼容探测、备份恢复**保证长期运行的工程可靠性。架构与业务解耦，可平移到任意垂直 Agent。
+> 为开源桌面 Agent [QwenPaw](https://github.com/agentscope-ai/qwenpaw)（底层框架 **AgentScope**）实现其**官方记忆后端接口** `BaseMemoryManager`，把云端托管的[火山引擎 Mem0](https://www.volcengine.com/product/mem0) 接入为一个可按 Agent 独立开关的长期记忆后端：回复前自动语义召回、按节奏批量抽取写入，并提供 5 个显式记忆工具。运行时**仅依赖 `httpx`**（零 mem0ai / 零 Web 框架），内置令牌桶限流、写入降本四道闸门、月度预算熔断、加载时序激活补救与备份恢复。
 
-**关键词**：LLM Agent · 长期记忆 · AgentScope `register_class_hook` · Mem0 向量记忆 · 异步队列 / 令牌桶 · 删除防复活 · 进程内注入 + FastAPI 双模式
+**关键词**：LLM Agent · 长期记忆 · QwenPaw `register_memory_backend` · AgentScope `BaseMemoryManager` · Mem0 REST · 降本与预算熔断 · 按 Agent 后端切换（云端 Mem0 / 本地 ReMe）
 
 ---
 
 ## ✨ 核心特性
 
-- **双层记忆架构**：Hook 层自动兜底（对用户透明、零配置），Skill 层显式可控（关键事实精准写入/纠错/删除），自动保下限、手动控上限。
-- **不阻塞主对话**：`MemoryCoordinator` 用「容量 1000 的异步队列 + 守护线程写入 + 令牌桶限流（默认 18 QPS，低于火山硬限 20）+ 失败重试」，把记忆 I/O 与对话主链路解耦。
-- **删除防复活（一致性设计）**：删除/更新记忆时，把原内容及其变体做哈希写入**带 TTL 的黑名单**，异步写入前先过黑名单，避免“队列里还排着写入、用户却已删除”导致记忆复活。
-- **面向真实宿主的健壮性**：① 启动时探测 mem0ai / AgentScope / `_MemoryMark.HINT` 等 API，缺失则降级回退而非崩溃；② Agent 类可能晚于插件加载，用后台线程在 60s 内重试注入；③ 插件目录与 workspace `_mem0_backup` 双向同步，宿主升级/换机不丢部署。
-- **双运行模式**：主模式为进程内 Hook 注入；另提供可选的 FastAPI 独立服务（`/memories` 增删查改 REST 接口）。
-- **托管 vs 自建的选型判断**：非敏感场景用火山引擎托管 Mem0，免自建向量库；客户端层做了抽象，可替换为私有化记忆后端，适配“数据不出厂”场景。
+- **官方记忆后端，而非旁路注入**：v2 实现 QwenPaw 2.x 官方的 `BaseMemoryManager`，通过 `api.register_memory_backend(backend_id="mem0", ...)` 注册，由框架在回复前自动检索、按间隔批量写入，语义与宿主原生记忆完全一致，不再依赖脆弱的类猴子补丁。
+- **按 Agent 独立开关**：在某个 Agent 的 `agent.json` 里把 `running.memory_manager_backend` 设为 `mem0` 即启用云端记忆（计费），其余 Agent 继续使用本地免费的 ReMe，互不影响；附带 Windows 一键切换脚本。
+- **零第三方记忆 SDK**：用 `httpx` 直连 Mem0 REST，对照官方接口契约独立实现增删改查，规避了冻结 / 精简环境下 `mem0ai` 依赖缺失导致的整体失效；`.env` 解析也只用标准库。
+- **自动 + 显式双层记忆**：自动层透明召回 / 批量写入保下限；5 个工具（search / add / list / update / delete）支持关键事实的精准写入、纠错与删除。
+- **写入降本四道闸门**：① 每 5 轮批量写，摊薄服务端抽取的固定开销；② 丢弃 tool 角色消息（工具输出不入抽取，最大费用放大器）；③ 噪音 / 长度过滤；④ 内容去重 + 删除防复活。
+- **预算熔断**：内置用量记账，按月估算 Credit 与金额，超过月度预算（默认 10 元）**只停写、不停检索**（读远比写便宜）。
+- **加载时序激活补救**：针对 QwenPaw 2.x「Agent 工作区先于插件启动」导致首次回退本地后端的问题，注册后自动执行 `reserve_selection → reload_agent → 实例复核`，约 20 秒内零停机激活。
+- **备份与恢复**：插件自动同步到 default 工作区的 `_mem0_backup/`，宿主升级 / 换机不丢部署；全程异常兜底，绝不影响 QwenPaw 正常启动。
 
 ---
 
-## 🧩 背景：为什么做
+## 🧩 背景：为什么从 v1 重构到 v2
 
-开源 Agent 长周期使用的三个典型问题：
+v1 通过 AgentScope 的类级生命周期 Hook（`register_class_hook`）+ Skill 工具实现双层记忆，并在生产环境长期运行。**agentscope 2.0.7 移除了 `register_class_hook`、`agentscope.memory` 与 `_MemoryMark`，v1 的整条注入路径随之失效。**
 
-1. **上下文丢失**：超出上下文窗口或新开会话后，Agent 记不住历史事实与用户偏好；
-2. **记忆不可控**：纯自动抽取会漏记错记，缺少人工精准写入与纠错入口；
-3. **工程可靠性缺失**：同步写记忆拖慢回复，限流、重试、线程安全、删除一致性等问题在 Demo 阶段常被忽略，长期运行就暴露。
+QwenPaw 2.x 同时给出了官方答案：开放统一的记忆后端抽象 `BaseMemoryManager` 与注册接口 `register_memory_backend`。v2 据此做了一次**彻底重构而非打补丁**，语义与 v1 一一对应：
 
-本项目目标不是再写一个聊天 Demo，而是产出一套**可长期稳定运行、可治理、可迁移**的 Agent 记忆层。
+| v1（agentscope 1.x，已失效） | v2（本仓库，QwenPaw 2.x 官方后端） |
+| --- | --- |
+| `pre_reply` / `post_reply` 类钩子 | 框架基类 `auto_memory_search()` / `auto_memory()` |
+| 5 个 Skill 工具 | `list_memory_tools()` 返回的 5 个记忆工具 |
+| 自建异步队列 + worker | 框架 `submit_auto_memory` 共享队列 |
+| `mem0ai` SDK + 可选 FastAPI 服务 | `httpx` 直连 REST（零 mem0ai / 零 Web 框架） |
+| 进程内猴子补丁注入 | 官方 `register_memory_backend` 注册 |
+
+迁移细节与文件对照见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
 ## 🏗️ 架构设计
 
-### 整体架构
-
 ```mermaid
 flowchart TD
-    U[用户对话] --> A[QwenPaw ReActAgent / AgentScope]
-    subgraph P[mem0-integration 插件]
-        H[Hook 自动层 · 4 个生命周期钩子<br/>pre_reply 主检索 / pre_reasoning 兜底<br/>post_acting 收集 / post_reply 异步写]
-        S[Skill 显式层 · 5 个工具<br/>add / search / list / update / delete]
-        C[MemoryCoordinator 单例<br/>异步队列1000 · 令牌桶18QPS · 重试<br/>线程锁 · user_id 隔离 · 防复活黑名单]
-        H --> C
-        S --> C
+    U[用户对话] --> A[QwenPaw Agent / AgentScope 2.0]
+    A -->|注册| REG[register_memory_backend<br/>backend_id = mem0]
+
+    subgraph P[mem0-integration 插件 v2]
+        BM[Mem0MemoryManager<br/>实现官方 BaseMemoryManager]
+        BM -->|自动检索| SEARCH[memory_search<br/>回复前召回 Top-K 注入]
+        BM -->|自动写入| AUTO[auto_memory<br/>框架队列 · 每 5 轮批量]
+        BM --> TL[5 个显式工具<br/>search/add/list/update/delete]
+        AUTO --> CF[content_filter<br/>降本四闸门 · 去重防复活]
+        CF --> METER[usage_meter<br/>记账 · 月度预算熔断]
+        BM --> HC[http_client · 仅 httpx<br/>令牌桶 18 QPS · 退避重试]
     end
-    A --> H
-    A --> S
-    C --> MC[(mem0ai SDK · MemoryClient)]
-    MC --> V[(火山引擎托管 Mem0<br/>向量存储 / 语义检索)]
-    V -. Top-K 相关记忆 .-> H
-    F[FastAPI 可选独立服务<br/>/memories REST] -.旁路.-> C
+
+    REG --> BM
+    ACT[activation 激活补救<br/>reserve → reload → 实例复核] -.启动约20s.-> BM
+    HC -->|HTTPS REST /v1/memories/*| V[(火山引擎托管 Mem0<br/>向量存储 / 语义检索)]
+    V -. Top-K 相关记忆 .-> SEARCH
 ```
 
-> Gitee 等环境若未渲染 Mermaid，见 `docs/arch.png`（建议导出一张兜底）。
+### 自动记忆层（对用户透明）
 
-### Hook 自动层（类级别，对所有 Agent 实例生效）
+- **检索**：框架在回复前调用基类 `auto_memory_search()` → 本后端 `memory_search()`，以当前用户消息做语义检索，命中的长期记忆被包装成合成工具消息注入上下文；无结果返回框架约定的 `No relevant memories found.`，默认召回 3 条（`MEM0_MAX_RESULTS`）。
+- **写入**：框架把对话放入 `submit_auto_memory` 共享队列，按 `get_auto_memory_interval()`（默认每 5 轮用户回复）回调 `auto_memory()`，批量抽取后写入，摊薄服务端每次抽取的固定提示词开销。
+- **隔离**：以 `agent_id` 作为 Mem0 的 `user_id`，不同 Agent 的记忆物理隔离、不串扰。
 
-| 钩子 | 注册名 | 触发时机 | 职责 |
-| --- | --- | --- | --- |
-| `pre_reply` | `mem0_search_inject` | 回复前（主） | 取最后用户消息检索 Top-K 记忆，以 HINT 注入上下文 |
-| `pre_reasoning` | `mem0_search_fallback` | 推理前（兜底） | 当 pre_reply 未命中时补一次检索，标志位去重 |
-| `post_acting` | `mem0_tool_collect` | 工具执行后 | 把工具结果放入 buffer 累积，供写入时合并 |
-| `post_reply` | `mem0_async_write` | 回复后（主写） | 将“用户消息 + 回复 + 工具结果”异步入队 |
+### 显式工具层（5 个，随后端注册）
 
-### Skill 显式层（5 个工具，注册到 Agent Toolkit）
-
-| 工具函数 | 面向 LLM 的能力 |
+| 工具 | 能力 |
 | --- | --- |
-| `add_memory` | 显式写入关键事实/偏好（不依赖自动抽取） |
-| `search_memory` | 语义检索（默认 Top-5，可配上限） |
-| `list_all_memories` | 列出当前智能体的全部记忆 |
-| `update_memory` | 修改记忆（旧内容自动进防复活黑名单） |
-| `delete_memory` | 删除记忆（内容变体一并拉黑） |
+| `search_memory(query, limit=5)` | 语义检索历史记忆（返回 id 与相似度） |
+| `add_memory(content, tags="")` | 显式写入一条关键事实 / 偏好（不依赖自动抽取） |
+| `list_memories(limit=20)` | 列出当前 Agent 的记忆（拿到 id 后可改 / 删） |
+| `update_memory(memory_id, content)` | 修改一条记忆 |
+| `delete_memory(memory_id)` | 删除记忆，并把内容加入去重黑名单防止异步写入使其复活 |
 
-### Coordinator 的关键工程设计
+### 写入降本四道闸门
 
-- **异步 + 削峰**：`queue.Queue(maxsize=1000)` 缓冲写入峰值，独立 daemon worker 顺序消费，主对话零阻塞；关键信息可用 Skill 同步写入兜底一致性。
-- **令牌桶限流**：按配置 QPS 匀速补充令牌、桶容量等于 QPS，保护托管侧不触发 20 QPS 硬限。
-- **线程安全单例**：客户端初始化、令牌桶、黑名单分别用锁保护，多 Agent 并发调用安全。
-- **智能体隔离**：所有读写带 `user_id`（由 `agent.name` 传入），不同智能体记忆物理隔离、不串扰。
-- **防复活**：黑名单 `内容哈希 → 过期时间`，TTL 默认 900s；`blacklist_variants` 在删除/更新时把内容变体一并拉黑，worker 写入前逐条校验。
+1. **批量节奏**：默认每 5 轮才触发一次服务端抽取写入（`MEM0_AUTO_MEMORY_INTERVAL`，设 0 关闭自动写）。
+2. **丢弃工具输出**：默认不把 `tool` 角色消息（浏览器 / 代码执行等动辄数万字符的结果）送入抽取 LLM——这是最大的费用放大器（`MEM0_KEEP_TOOL_MESSAGES`）。
+3. **噪音 / 长度过滤**：低于 `MEM0_MIN_WRITE_LENGTH`（默认 10 字）的整段、寒暄、报错堆栈回显、心跳消息一律跳过，同时避免误杀「我喜欢吃蔬菜」这类短事实。
+4. **去重与防复活**：`DedupCache` 对同一内容在 TTL（默认 900s）内只写一次；删除记忆时 `mark_deleted` 拉黑，防止队列里排队的写入把已删内容「复活」。
 
-### 关键设计决策（Design Decisions）
+### 预算熔断与限流
 
-- **为什么 Hook + Skill 双层，而非只做自动记忆？** 自动抽取召回做不到 100% 且不可解释，纯手动又增加负担；双层用自动保下限、手动控上限。
-- **为什么写入异步、检索同步？** 写入是最终一致的非关键路径，可异步；召回结果要进当轮上下文，必须同步，故只对写入排队、检索直接执行。
-- **为什么需要版本兼容探测？** 宿主与第三方库会升级：启动时先探测 `mem0ai` 版本、AgentScope 是否存在 `register_class_hook`、`_MemoryMark.HINT` 是否可用，任一不满足就降级（如 HINT 不可用回退 system prompt），而不是直接抛错拖垮宿主。
-- **为什么用托管 Mem0？** 验证场景数据不敏感，托管省去向量库运维；客户端抽象隔离了后端，切换私有化实现只需替换 `MemoryClient`。
+- 火山引擎 Mem0 自 **2026-11-02 10:00（UTC+8）** 起计费：Credit 1.12 元 / 百万 Credit，存储 0.0025 元 / 万条·小时。
+- 插件按字符数估算 token（约 字符 / 1.6）与 Credit（约 token × 3.2），按月分桶写入本地 `usage.json`；超过 `MEM0_MONTHLY_BUDGET_YUAN`（默认 10 元）后仅暂停写入，检索照常。
+- 估算仅用于趋势判断与防意外，**不替代火山控制台账单**；建议首个计费月后按真实账单校准系数。
+- 客户端令牌桶默认 18 QPS（低于火山硬限 20），对 429 做指数退避重试（最多 3 次）。
+
+### 加载时序激活补救
+
+QwenPaw 2.x 的实际启动顺序是「Agent 工作区启动 → 插件 `register_memory_backend`」，而注册接口要求在工作区启动前完成，因此配置为 mem0 的 Agent 首次会回退到本地 ReMe。插件在注册后（启动约 20 秒、带 6 次重试）依次执行：
+
+1. `memory_registry.reserve_selection("mem0", agent_id)`：登记预留；
+2. `MultiAgentManager.reload_agent(agent_id)`：零停机重建工作区（该接口实为协程，须在事件循环中 `await`）；
+3. 通过 GC 以 `isinstance` 复核 `Mem0MemoryManager` 真实实例存在（不能用实例级 `hasattr`，宿主代理对象的万能 `__getattr__` 会造成大量假阳性）。
 
 ---
 
@@ -101,53 +113,63 @@ flowchart TD
 
 ```
 mem0-integration/
-├── backend.py                     # 插件入口：注册启动/关闭钩子，完成 Hook+Skill 注入、备份恢复
-├── plugin.json                    # 插件清单（id/type=hook/入口/版本）
-├── test_plugin.py                 # 注入逻辑自测（Path.home 定位，可用 MEM0_PLUGIN_BACKEND 覆盖）
-├── docs/                          # 在线使用手册（user-guide-zh.md）+ Word 版说明书
-├── requirements.txt               # 依赖说明
+├── backend.py                  # 插件入口：注册记忆后端 + restore/backup/shutdown/activate 钩子
+├── plugin.json                 # 插件清单（v2.0.0，入口 backend.py）
+├── set_mem0_agent.ps1          # 按 Agent 切换 mem0 / remelight 的辅助脚本（Windows）
+├── requirements.txt            # 运行依赖（仅 httpx）
+├── docs/
+│   ├── user-guide-zh.md        # 完整使用说明书（在线版，推荐先读）
+│   └── 用户使用说明书.docx      # 同内容 Word 版
 └── mem0_service/
-    ├── config.py                  # 全部配置读环境变量（.env），含校验与 mem0 客户端配置
-    ├── .env.example               # 环境变量模板（真实 .env 不入库）
-    ├── test_connection.py         # 连通性自测
-    ├── api/routes.py              # 【可选】FastAPI 独立服务：/memories 增删查改
-    ├── hooks/memory_hooks.py      # 4 个生命周期 Hook 实现
-    ├── skills/memory_skills.py    # 5 个显式记忆工具（ALL_TOOLS）
-    ├── utils/coordinator.py       # MemoryCoordinator：队列/限流/黑名单/隔离/单例
-    └── qwenpaw_client/mem0_client.py  # mem0ai SDK 封装（托管后端适配层）
+    ├── __init__.py
+    ├── config.py               # .env 解析与配置校验（仅标准库）
+    ├── memory_backend.py       # Mem0MemoryManager：实现官方 BaseMemoryManager
+    ├── http_client.py          # 零依赖 REST 客户端（httpx，限流 / 重试）
+    ├── tools.py                # 5 个显式记忆工具
+    ├── content_filter.py       # 写入过滤与去重（降本核心）
+    ├── usage_meter.py          # 用量记账与月度预算熔断
+    ├── activation.py           # 后端激活补救（加载时序）
+    ├── .env.example            # 环境变量模板（真实 .env 不入库）
+    └── requirements.txt        # 历史位置，依赖以根目录为准
 ```
 
 ---
 
 ## 🚀 快速开始
 
-### 方式一：作为 QwenPaw 插件（主用法）
+### 1. 安装到用户级插件目录
+
 ```bash
-# 1. 克隆后放入宿主用户级插件目录（用户级目录不会被宿主升级覆盖）
-git clone https://github.com/HawChen/qwenpaw-mem0.git
-# 将目录放到 ~/.qwenpaw/plugins/mem0-integration
+# 用户级目录不会被 QwenPaw 升级覆盖
+git clone https://github.com/HawChen/qwenpaw-mem0.git mem0-integration
+# 将 mem0-integration 目录移动到 ~/.qwenpaw/plugins/mem0-integration
+```
 
-# 2. 安装依赖（宿主自带 Python 已预装大部分；独立环境按下表安装）
-pip install -r mem0_service/requirements.txt
+### 2. 配置凭据
 
-# 3. 配置凭据（不要把真实 Key 写进代码）
+```bash
 cp mem0_service/.env.example mem0_service/.env
-# 编辑 .env，填入 VOLC_MEM0_API_KEY
-
-# 4. 重启 QwenPaw；日志出现“双方案注入完成 / worker thread started”即成功
+# 编辑 .env，填入火山引擎 Mem0 的 VOLC_MEM0_HOST 与 VOLC_MEM0_API_KEY
 ```
 
-### 方式二：作为独立 FastAPI 服务（可选）
-```bash
-uvicorn mem0_service.api.routes:app --host 127.0.0.1 --port 8765
-# 接口：POST /memories/search、GET /memories、POST /memories、PUT/DELETE /memories/{id}
+> 依赖：QwenPaw 自带 Python 环境已内置 `httpx`，通常无需安装；独立环境可执行 `pip install -r requirements.txt`。
+
+### 3. 为指定 Agent 开启云端记忆
+
+```powershell
+# 开启（默认后端 mem0）
+powershell -ExecutionPolicy Bypass -File set_mem0_agent.ps1 -AgentId default
+# 关闭 / 回退本地免费 ReMe
+powershell -ExecutionPolicy Bypass -File set_mem0_agent.ps1 -AgentId default -Backend remelight
+# 查看各 Agent 当前使用的记忆后端
+powershell -ExecutionPolicy Bypass -File set_mem0_agent.ps1 -List
 ```
 
-### 连通性 / 注入自测
-```bash
-python mem0_service/test_connection.py   # 测试到托管 Mem0 的连通
-python test_plugin.py                    # 测试 Hook+Skill 是否成功注入 Agent
-```
+脚本只修改对应 Agent `agent.json` 中的 `running.memory_manager_backend` 字段，写入前自动备份、写入后校验 JSON。
+
+### 4. 重启 QwenPaw
+
+插件随启动注册记忆后端，并在约 20 秒后自动重载并激活目标 Agent，**无需手动新建会话**。日志出现 `✓ 激活成功，真实实例: [...]` 即完成。随后可让 Agent 记住一条信息，开启新会话验证自动召回。
 
 ---
 
@@ -155,60 +177,56 @@ python test_plugin.py                    # 测试 Hook+Skill 是否成功注入 
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `VOLC_MEM0_API_KEY` | 火山引擎 Mem0 Key（必填，仅存于本地 `.env`） | — |
-| `VOLC_MEM0_HOST` | 托管端点（不带尾斜杠） | `https://mem0-cn-beijing.volces.com` |
-| `MEM0_SERVICE_HOST/PORT` | 可选 FastAPI 监听 | `127.0.0.1:8765` |
-| `MEM0_QPS_LIMIT` | 令牌桶限流（火山硬限 20，保守取 18） | `18` |
-| `MEM0_QUEUE_MAX_SIZE` | 异步写入队列容量 | `1000` |
-| `MEM0_REQUEST_TIMEOUT / _READ_TIMEOUT` | 写/读超时（秒） | `5 / 3` |
-| `MEM0_BLACKLIST_TTL` | 防复活黑名单存活（秒） | `900` |
-
----
-
-## 📊 效果演示
-
-> 建议录成 GIF 放到 `docs/`：①写入→新会话自动召回；②显式 delete 后验证“不复活”；③两个智能体记忆隔离。
-
-| 场景 | 演示 |
-| --- | --- |
-| 跨会话自动记忆与召回 | `docs/demo-recall.gif`（待补） |
-| 删除后防复活 | `docs/demo-no-revive.gif`（待补） |
-| 多智能体记忆隔离 | `docs/demo-isolation.gif`（待补） |
+| `VOLC_MEM0_HOST` | 专属实例接入地址（不带尾斜杠） | 必填，占位 `https://mem0-<your-instance-id>.mem0.volces.com:8000` |
+| `VOLC_MEM0_API_KEY` | 火山引擎 Mem0 API Key（仅存本地 `.env`） | 必填 |
+| `MEM0_QPS_LIMIT` | 令牌桶限流（不得超过火山硬限 20） | `18` |
+| `MEM0_REQUEST_TIMEOUT` / `MEM0_READ_TIMEOUT` | 连接 / 读取超时（秒） | `5` / `15` |
+| `MEM0_MEMORY_SEARCH_ENABLED` | 是否开启回复前自动检索 | `true` |
+| `MEM0_MAX_RESULTS` | 自动召回条数 | `3` |
+| `MEM0_AUTO_MEMORY_INTERVAL` | 每多少轮用户回复批量写一次（`0` 关闭自动写） | `5` |
+| `MEM0_MIN_WRITE_LENGTH` | 触发写入的最短内容长度 | `10` |
+| `MEM0_KEEP_TOOL_MESSAGES` | 是否保留 tool 角色消息（降本开关，默认丢弃） | `false` |
+| `MEM0_BLACKLIST_TTL` | 去重缓存 / 删除防复活黑名单 TTL（秒） | `900` |
+| `MEM0_USAGE_ENABLED` | 是否记录用量估算 | `true` |
+| `MEM0_MONTHLY_BUDGET_YUAN` | 月度预算（元），超额只停写 | `10` |
+| `MEM0_CREDIT_PER_TOKEN` | 每 token 折算 Credit 的经验系数 | `3.2` |
+| `MEM0_YUAN_PER_MILLION_CREDIT` | 每百万 Credit 单价（元） | `1.12` |
 
 ---
 
 ## 🛣️ Roadmap
 
-- [ ] 写入前实体抽取去重、检索后相关性阈值过滤，进一步降噪
-- [ ] 定时摘要（Auto-dream）把短期事实沉淀为长期画像
-- [ ] 抽象记忆后端，提供本地 Milvus 私有化实现
-- [ ] 记忆可观测面板：写入量、命中率、队列积压、Token 用量
+- [ ] 检索结果相关性阈值过滤，进一步降低无关记忆注入
+- [ ] 首个计费月后用火山真实账单校准 token / Credit 换算系数
+- [ ] 记忆可观测面板：写入量、召回命中率、预算消耗
+- [ ] 在 `http_client` 抽象之上提供本地向量库后端，支持「数据不出厂」私有化部署
 
 ---
 
 ## 📚 文档
 
-- [**用户使用说明书（在线 Markdown，推荐先读）**](docs/user-guide-zh.md)：部署、5 个工具的参数与示例、火山引擎后台查看、7 条 FAQ 排障与日常维护清单
-- [用户使用说明书（Word 版）](docs/用户使用说明书.docx)：同内容的可下载 / 打印版本
-- 代码内关键模块均带中文 docstring，建议按 `backend.py → hooks/skills → utils/coordinator.py` 顺序阅读。
+- [**用户使用说明书（在线 Markdown，推荐先读）**](docs/user-guide-zh.md)：原理、安装配置、按 Agent 开关、5 个工具详解、计费降本、验证方法、FAQ 排障与维护清单。
+- [用户使用说明书（Word 版）](docs/用户使用说明书.docx)：同内容的可下载 / 打印版本。
+- [变更日志](CHANGELOG.md)：v1 → v2 的架构迁移、接口与文件对照、升级步骤。
+- 代码内关键模块均带中文 docstring，建议按 `backend.py → memory_backend.py → http_client.py → content_filter.py / usage_meter.py / activation.py` 顺序阅读。
 
 ---
 
 ## ⚖️ 法律与商标声明
 
-- **原创与许可**：本仓库代码为作者原创，以 MIT 发布；通过 QwenPaw / AgentScope 的公开 Hook、Toolkit 接口及 mem0ai SDK 开发，**未复制或修改上游源码**，属于独立的第三方插件。
-- **上游许可兼容性**：QwenPaw、AgentScope、mem0ai 均为 Apache-2.0；FastAPI / Pydantic 为 MIT，Uvicorn / HTTPX / python-dotenv 为 BSD，均与 MIT 兼容。完整组件版本、权利人与归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-- **非官方声明（No Affiliation）**：本项目为个人非官方项目，与阿里巴巴（QwenPaw / 通义 / AgentScope）、字节跳动（火山引擎 Volcengine）、Mem0 AI 均无隶属、赞助或背书关系；上述名称与商标归各自权利人所有，仅用于说明兼容对象与技术来源，未使用任何官方 Logo。
-- **云服务自费与凭据安全**：火山引擎 Mem0 需使用者自行开通并获取本人 API Key（仅保存在本地 `.env`，仓库不含任何可用凭据），调用费用、配额与账号合规由使用者自行承担。
-- 代码按“现状（AS IS）”提供，免责声明详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **原创与许可**：本仓库自有代码为作者原创，以 **MIT License** 发布（见 [LICENSE](LICENSE)）。
+- **扩展合规**：插件基于 QwenPaw / AgentScope（均为 Apache-2.0）**官方开放**的记忆后端接口（`BaseMemoryManager`、`register_memory_backend`）与启动 / 关闭钩子扩展点开发，**未复制、修改或再分发其源代码**，属于独立的第三方插件。
+- **第三方组件**：运行时仅依赖 `httpx`（BSD-3-Clause）。`http_client` 的 REST 请求 / 响应契约参考火山引擎 Mem0 官方 API 文档及 mem0ai（Apache-2.0）的公开接口约定，为独立实现，**不含 mem0ai 的 SDK 源码**。完整归属与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **非官方声明（No Affiliation）**：本项目为个人非官方项目，与阿里巴巴（QwenPaw / 通义 / AgentScope）、字节跳动（火山引擎 Volcengine）、Mem0 AI 均无隶属、赞助或背书关系；相关名称与商标归各自权利人所有，仅用于说明兼容对象与技术来源，未使用任何官方 Logo。
+- **云服务自费与凭据安全**：火山引擎 Mem0 需使用者自行开通并获取本人 API Key（仅保存在本地 `.env`，仓库不含任何可用凭据、专属实例地址或业务数据），调用费用、配额与账号合规由使用者自行承担。
+- 代码按「现状（AS IS）」提供，免责声明详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ---
 
 ## 🙋 关于作者
 
-AI Agent 产品经理，聚焦大模型在工业 / 企业服务场景的私有化落地，擅长 RAG、多 Agent 编排与 Agent 记忆 / 约束架构。
+**HawChen**，AI Agent 产品经理，聚焦大模型在工业 / 企业服务场景的私有化落地，擅长 RAG、多 Agent 编排与 Agent 记忆 / 约束工程。
 
-- 技术博客 / 行业观察：知乎专栏「逆水方塘」【链接待补】
-- 联系方式：通过 GitHub 与我联系 → [@HawChen](https://github.com/HawChen)（欢迎在本仓库提交 Issue / Discussion，或访问我的 GitHub 主页）
+- 联系方式：通过 GitHub 与我联系 → [@HawChen](https://github.com/HawChen)，欢迎在本仓库提交 Issue / Discussion。
 
-> 本仓库不包含任何真实密钥与业务数据；第三方框架与服务的版权、商标归各自权利人所有，许可与归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+> 本仓库不包含任何真实密钥、专属实例地址与业务数据；第三方框架与服务的版权、商标归各自权利人所有，许可与归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

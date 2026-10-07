@@ -1,8 +1,8 @@
 {
   "id": "mem0-integration",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "火山引擎 Mem0 记忆系统",
-  "description": "Hook 兜底 + Skill 增强双方案：pre_reply 自动检索注入，post_reply 异步写入；5 个记忆管理工具供 LLM 显式调用。",
+  "description": "官方记忆后端：自动检索注入 + 按间隔批量写入 + 5 个记忆管理工具。按 Agent 可选，不影响本地 ReMe。",
   "author": "HawChen",
   "type": "hook",
   "entry": {
@@ -11,6 +11,7 @@
   "dependencies": [],
   "min_version": "0.1.0",
   "meta": {
-    "hook_type": "startup"
+    "hook_type": "startup",
+    "memory_backend_id": "mem0"
   }
 }

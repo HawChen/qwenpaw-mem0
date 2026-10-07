@@ -20,6 +20,8 @@ venv/
 *.log
 _mem0_backup/
 _RESTORE_INFO.json
+usage.json
+usage.json.tmp
 *.tmp
 *.bak
 
