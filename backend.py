@@ -55,8 +55,19 @@ _EXCLUDE = {
     ".env",
 }
 
-# 递归复制时同样排除 .env：其中保存云端 API Key，绝不能进入 workspace 备份/恢复
-_BACKUP_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".env")
+# 递归复制时排除的内容：
+# .env 保存云端 API Key，绝不能进入 workspace 备份/恢复；
+# 日志、用量、备份残留、测试目录属于本机状态，进备份包只会增大体积与泄露面，无助于恢复。
+_BACKUP_IGNORE = shutil.ignore_patterns(
+    "__pycache__",
+    "*.pyc",
+    ".env",
+    "*.log",
+    "usage.json",
+    "usage.json.tmp",
+    "*.bak*",
+    "tests",
+)
 
 # 将插件目录加入 sys.path，使 mem0_service 可作为包导入
 if str(_PLUGIN_DIR) not in sys.path:
