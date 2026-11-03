@@ -52,7 +52,11 @@ _EXCLUDE = {
     "_RESTORE_INFO.json",
     ".tmp",
     ".bak",
+    ".env",
 }
+
+# 递归复制时同样排除 .env：其中保存云端 API Key，绝不能进入 workspace 备份/恢复
+_BACKUP_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".env")
 
 # 将插件目录加入 sys.path，使 mem0_service 可作为包导入
 if str(_PLUGIN_DIR) not in sys.path:
@@ -201,7 +205,7 @@ class Mem0IntegrationPlugin:
                 dst = sync_dir / item.name
                 if item.is_dir():
                     shutil.copytree(
-                        item, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+                        item, dst, ignore=_BACKUP_IGNORE
                     )
                 else:
                     shutil.copy2(item, dst)
@@ -248,7 +252,7 @@ class Mem0IntegrationPlugin:
                     if dst.exists():
                         shutil.rmtree(dst, ignore_errors=True)
                     shutil.copytree(
-                        item, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+                        item, dst, ignore=_BACKUP_IGNORE
                     )
                 else:
                     shutil.copy2(item, dst)
