@@ -20,6 +20,7 @@
 - 容错优先：所有异常被捕获，绝不影响 QwenPaw 正常运行
 """
 import datetime
+import fnmatch
 import json
 import logging
 import shutil
@@ -52,7 +53,28 @@ _EXCLUDE = {
     "_RESTORE_INFO.json",
     ".tmp",
     ".bak",
+    ".env",
 }
+
+# 递归复制时排除的内容：
+# .env 保存云端 API Key，绝不能进入 workspace 备份/恢复；
+# 日志、用量、备份残留、测试目录属于本机状态，进备份包只会增大体积与泄露面，无助于恢复。
+_BACKUP_IGNORE_PATTERNS = (
+    "__pycache__",
+    "*.pyc",
+    ".env",
+    "*.log",
+    "usage.json",
+    "usage.json.tmp",
+    "*.bak*",
+    "tests",
+)
+_BACKUP_IGNORE = shutil.ignore_patterns(*_BACKUP_IGNORE_PATTERNS)
+
+
+def _is_backup_ignored(path: Path) -> bool:
+    """顶层文件走 copy2 时 ignore_patterns 不生效，需手动按名称过滤。"""
+    return any(fnmatch.fnmatch(path.name, p) for p in _BACKUP_IGNORE_PATTERNS)
 
 # 将插件目录加入 sys.path，使 mem0_service 可作为包导入
 if str(_PLUGIN_DIR) not in sys.path:
@@ -196,12 +218,12 @@ class Mem0IntegrationPlugin:
 
             copied = 0
             for item in _PLUGIN_DIR.iterdir():
-                if item.name in _EXCLUDE:
+                if item.name in _EXCLUDE or _is_backup_ignored(item):
                     continue
                 dst = sync_dir / item.name
                 if item.is_dir():
                     shutil.copytree(
-                        item, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+                        item, dst, ignore=_BACKUP_IGNORE
                     )
                 else:
                     shutil.copy2(item, dst)
@@ -241,14 +263,14 @@ class Mem0IntegrationPlugin:
             _log("[restore] 插件目录不完整，开始恢复...")
             restored = 0
             for item in sync_dir.iterdir():
-                if item.name in _EXCLUDE:
+                if item.name in _EXCLUDE or _is_backup_ignored(item):
                     continue
                 dst = _PLUGIN_DIR / item.name
                 if item.is_dir():
                     if dst.exists():
                         shutil.rmtree(dst, ignore_errors=True)
                     shutil.copytree(
-                        item, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+                        item, dst, ignore=_BACKUP_IGNORE
                     )
                 else:
                     shutil.copy2(item, dst)
